@@ -1,108 +1,112 @@
-# backend/main.py
-
 from fastapi import FastAPI
+import requests
 from database import students, attendance_records, food_orders, makeup_classes
 
 app = FastAPI(title="Smart LPU Campus Management System")
 
-# -----------------------------
-# Student Module
-# -----------------------------
+# ----------------------------------
+# EMAILJS CONFIG (REPLACE VALUES)
+# ----------------------------------
+EMAILJS_SERVICE_ID = "service_studentmail"
+EMAILJS_TEMPLATE_ID = "template_studentemail"
+EMAILJS_PUBLIC_KEY = "kzDMTd-G5wAKcvoY-"
+
+# ----------------------------------
+# SIMPLE EMAIL FUNCTION
+# ----------------------------------
+def send_email(to_email, subject, message):
+    email_data = {
+        "service_id": EMAILJS_SERVICE_ID,
+        "template_id": EMAILJS_TEMPLATE_ID,
+        "user_id": EMAILJS_PUBLIC_KEY,
+        "template_params": {
+            "to_email": to_email,
+            "subject": subject,
+            "message": message
+        }
+    }
+
+    try:
+        requests.post(
+            "https://api.emailjs.com/api/v1.0/email/send",
+            json=email_data
+        )
+    except:
+        print("Email failed")
+
+
+# ----------------------------------
+# STUDENT MODULE
+# ----------------------------------
 @app.post("/add_student")
-def add_student(student_name: str, roll_number: str):
+def add_student(student_name: str, roll_number: str, student_email: str):
     student = {
         "name": student_name,
-        "roll": roll_number
+        "roll": roll_number,
+        "email": student_email
     }
     students.append(student)
     return {"message": "Student added successfully"}
 
 
-@app.get("/students")
-def get_students():
-    return students
-
-
-# -----------------------------
-# Attendance Module
-# -----------------------------
+# ----------------------------------
+# ATTENDANCE MODULE
+# ----------------------------------
 @app.post("/mark_attendance")
-def mark_attendance(roll_number: str, status: str):
-    attendance = {
+def mark_attendance(roll_number: str, status: str, student_email: str):
+    record = {
         "roll": roll_number,
         "status": status
     }
-    attendance_records.append(attendance)
+    attendance_records.append(record)
+
+    if status == "Absent":
+        send_email(
+            to_email=student_email,
+            subject="Attendance Alert",
+            message="You have been marked ABSENT today."
+        )
+
     return {"message": "Attendance marked successfully"}
-
-
-@app.get("/attendance")
-def get_attendance():
-    return attendance_records
 
 
 @app.get("/absentees")
 def get_absentees():
-    absent_students = []
-
+    absentees = []
     for record in attendance_records:
         if record["status"] == "Absent":
-            absent_students.append(record["roll"])
+            absentees.append(record["roll"])
+    return {"absent_students": absentees}
 
-    return {"absent_students": absent_students}
 
-
-# -----------------------------
-# Food Pre-Order Module
-# -----------------------------
+# ----------------------------------
+# FOOD PRE-ORDER MODULE
+# ----------------------------------
 @app.post("/order_food")
-def order_food(student_name: str, food_item: str, break_time: str):
+def order_food(student_name: str, food_item: str, break_time: str, student_email: str):
     order = {
         "student": student_name,
         "food": food_item,
         "time": break_time
     }
     food_orders.append(order)
+
+    send_email(
+        to_email=student_email,
+        subject="Food Order Confirmation",
+        message=f"Your order for {food_item} at {break_time} is confirmed."
+    )
+
     return {"message": "Food order placed successfully"}
 
 
-@app.get("/food_orders")
-def get_food_orders():
-    return food_orders
-
-
-@app.get("/food_demand")
-def food_demand():
-    demand_count = {}
-
-    for order in food_orders:
-        time = order["time"]
-        if time in demand_count:
-            demand_count[time] += 1
-        else:
-            demand_count[time] = 1
-
-    return demand_count
-
-
-# -----------------------------
-# Make-Up Class Module
-# -----------------------------
+# ----------------------------------
+# MAKE-UP CLASS MODULE
+# ----------------------------------
 @app.post("/schedule_makeup_class")
 def schedule_makeup_class(subject_name: str, remedial_code: str):
-    makeup_class = {
+    makeup_classes.append({
         "subject": subject_name,
         "code": remedial_code
-    }
-    makeup_classes.append(makeup_class)
-    return {"message": "Make-up class scheduled successfully"}
-
-
-@app.post("/mark_makeup_attendance")
-def mark_makeup_attendance(roll_number: str, remedial_code: str):
-    record = {
-        "roll": roll_number,
-        "remedial_code": remedial_code
-    }
-    attendance_records.append(record)
-    return {"message": "Make-up attendance marked successfully"}
+    })
+    return {"message": "Make-up class scheduled"}
