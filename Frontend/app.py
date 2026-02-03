@@ -1,7 +1,7 @@
 import streamlit as st
 import requests
 
-BACKEND_URL = "https://smart-campus-management-system-lcgz.onrender.com"
+BACKEND_URL = "https://smart-campus-management-system-lcgz.onrender.com"  # replace with Render URL after deploy
 
 st.title("🏫 Smart LPU Campus Management System")
 
@@ -46,7 +46,7 @@ if menu == "Mark Attendance":
 
     roll = st.text_input("Roll Number")
     email = st.text_input("Student Email")
-    status = st.selectbox("Status", ["Present", "Absent"])
+    status = st.selectbox("Attendance Status", ["Present", "Absent"])
 
     if st.button("Submit Attendance"):
         response = requests.post(
@@ -71,9 +71,7 @@ if menu == "Attendance History":
 
     if records:
         for record in records:
-            st.write(
-                f"Roll: {record['roll']} | Status: {record['status']}"
-            )
+            st.write(f"Roll: {record['roll']} | Status: {record['status']}")
     else:
         st.info("No attendance records found")
 
