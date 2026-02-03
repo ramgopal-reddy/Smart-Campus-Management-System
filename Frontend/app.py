@@ -1,5 +1,3 @@
-# frontend/app.py
-
 import streamlit as st
 import requests
 
@@ -12,54 +10,76 @@ menu = st.selectbox(
     [
         "Add Student",
         "Mark Attendance",
-        "View Absentees",
-        "Food Pre-Order",
-        "Make-Up Class"
+        "Food Order"
     ]
 )
 
-# -----------------------------
-# Add Student
-# -----------------------------
+# ----------------------------------
+# ADD STUDENT
+# ----------------------------------
 if menu == "Add Student":
     st.header("Add Student")
 
-    student_name = st.text_input("Student Name")
-    roll_number = st.text_input("Roll Number")
+    name = st.text_input("Student Name")
+    roll = st.text_input("Roll Number")
+    email = st.text_input("Student Email")
 
     if st.button("Add Student"):
         response = requests.post(
             f"{BACKEND_URL}/add_student",
             params={
-                "student_name": student_name,
-                "roll_number": roll_number
+                "student_name": name,
+                "roll_number": roll,
+                "student_email": email
             }
         )
         st.success(response.json()["message"])
 
 
-# -----------------------------
-# Mark Attendance
-# -----------------------------
+# ----------------------------------
+# MARK ATTENDANCE
+# ----------------------------------
 if menu == "Mark Attendance":
     st.header("Mark Attendance")
 
-    roll_number = st.text_input("Roll Number")
-    status = st.selectbox("Attendance Status", ["Present", "Absent"])
+    roll = st.text_input("Roll Number")
+    email = st.text_input("Student Email")
+    status = st.selectbox("Status", ["Present", "Absent"])
 
     if st.button("Submit Attendance"):
         response = requests.post(
             f"{BACKEND_URL}/mark_attendance",
             params={
-                "roll_number": roll_number,
-                "status": status
+                "roll_number": roll,
+                "status": status,
+                "student_email": email
             }
         )
         st.success(response.json()["message"])
 
 
-# -----------------------------
-# View Absentees
+# ----------------------------------
+# FOOD ORDER
+# ----------------------------------
+if menu == "Food Order":
+    st.header("Food Pre-Order")
+
+    name = st.text_input("Student Name")
+    email = st.text_input("Student Email")
+    food = st.text_input("Food Item")
+    time = st.selectbox("Break Time", ["10:30 AM", "1:30 PM", "4:30 PM"])
+
+    if st.button("Order Food"):
+        response = requests.post(
+            f"{BACKEND_URL}/order_food",
+            params={
+                "student_name": name,
+                "food_item": food,
+                "break_time": time,
+                "student_email": email
+            }
+        )
+        st.success(response.json()["message"])# View Absentees
 # -----------------------------
 if menu == "View Absentees":
     st.header("Absent Students")
