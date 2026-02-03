@@ -10,13 +10,15 @@ menu = st.selectbox(
     [
         "Add Student",
         "Mark Attendance",
-        "Food Order"
+        "Attendance History",
+        "Food Order",
+        "Food Order History"
     ]
 )
 
-# ----------------------------------
+# ------------------------------------
 # ADD STUDENT
-# ----------------------------------
+# ------------------------------------
 if menu == "Add Student":
     st.header("Add Student")
 
@@ -36,9 +38,9 @@ if menu == "Add Student":
         st.success(response.json()["message"])
 
 
-# ----------------------------------
+# ------------------------------------
 # MARK ATTENDANCE
-# ----------------------------------
+# ------------------------------------
 if menu == "Mark Attendance":
     st.header("Mark Attendance")
 
@@ -58,9 +60,27 @@ if menu == "Mark Attendance":
         st.success(response.json()["message"])
 
 
-# ----------------------------------
+# ------------------------------------
+# ATTENDANCE HISTORY
+# ------------------------------------
+if menu == "Attendance History":
+    st.header("Attendance History")
+
+    response = requests.get(f"{BACKEND_URL}/attendance_history")
+    records = response.json()
+
+    if records:
+        for record in records:
+            st.write(
+                f"Roll: {record['roll']} | Status: {record['status']}"
+            )
+    else:
+        st.info("No attendance records found")
+
+
+# ------------------------------------
 # FOOD ORDER
-# ----------------------------------
+# ------------------------------------
 if menu == "Food Order":
     st.header("Food Pre-Order")
 
@@ -79,58 +99,22 @@ if menu == "Food Order":
                 "student_email": email
             }
         )
-        st.success(response.json()["message"])# View Absentees
-# -----------------------------
-if menu == "View Absentees":
-    st.header("Absent Students")
+        st.success(response.json()["message"])
 
-    response = requests.get(f"{BACKEND_URL}/absentees")
-    absentees = response.json()["absent_students"]
 
-    if absentees:
-        for roll in absentees:
-            st.write("❌", roll)
+# ------------------------------------
+# FOOD ORDER HISTORY
+# ------------------------------------
+if menu == "Food Order History":
+    st.header("Food Order History")
+
+    response = requests.get(f"{BACKEND_URL}/food_order_history")
+    orders = response.json()
+
+    if orders:
+        for order in orders:
+            st.write(
+                f"Student: {order['student']} | Food: {order['food']} | Time: {order['time']}"
+            )
     else:
-        st.write("No absentees found")
-
-
-# -----------------------------
-# Food Pre-Order
-# -----------------------------
-if menu == "Food Pre-Order":
-    st.header("Food Pre-Order System")
-
-    student_name = st.text_input("Student Name")
-    food_item = st.text_input("Food Item")
-    break_time = st.selectbox("Break Time", ["10:30 AM", "1:30 PM", "4:30 PM"])
-
-    if st.button("Place Order"):
-        response = requests.post(
-            f"{BACKEND_URL}/order_food",
-            params={
-                "student_name": student_name,
-                "food_item": food_item,
-                "break_time": break_time
-            }
-        )
-        st.success(response.json()["message"])
-
-
-# -----------------------------
-# Make-Up Class
-# -----------------------------
-if menu == "Make-Up Class":
-    st.header("Make-Up Class Scheduling")
-
-    subject_name = st.text_input("Subject Name")
-    remedial_code = st.text_input("Remedial Code")
-
-    if st.button("Schedule Class"):
-        response = requests.post(
-            f"{BACKEND_URL}/schedule_makeup_class",
-            params={
-                "subject_name": subject_name,
-                "remedial_code": remedial_code
-            }
-        )
-        st.success(response.json()["message"])
+        st.info("No food orders found")
