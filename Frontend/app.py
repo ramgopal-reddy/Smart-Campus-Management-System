@@ -3,7 +3,7 @@ import requests
 
 BACKEND_URL = "https://smart-campus-management-system-lcgz.onrender.com"  # replace with Render URL after deploy
 
-st.title("🏫 Smart LPU Campus Management System")
+st.title("🎓 CampusSync – Smart Campus Management Platform")
 
 menu = st.selectbox(
     "Select Module",
