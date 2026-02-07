@@ -57,6 +57,13 @@ def mark_attendance(roll_number: str, status: str, student_email: str):
             subject="Attendance Alert",
             message_text="You were marked ABSENT today. Please contact faculty."
         )
+        
+    if status == "Present":
+        send_email(
+            to_email=student_email,
+            subject="Attendance Alert",
+            message_text="You were marked PRESENT today. Happy Learning."
+        )
 
     return {"message": "Attendance marked successfully"}
 
@@ -89,7 +96,8 @@ def order_food(student_name: str, food_item: str, break_time: str, student_email
 
 @app.get("/food_order_history")
 def food_order_history():
-    return food_orders# ------------------------------------
+    return food_orders
+# ------------------------------------
 # STUDENT MODULE
 # ------------------------------------
 @app.post("/add_student")
@@ -126,6 +134,20 @@ def mark_attendance(roll_number: str, status: str, student_email: str):
 @app.get("/attendance_history")
 def attendance_history():
     return attendance_records
+
+# -----------------------------
+# GET STUDENT DETAILS
+# -----------------------------
+@app.get("/student/{roll_number}")
+def get_student(roll_number: str):
+
+    for student in students:
+
+        if student["roll"] == roll_number:
+            return student
+
+    return {"error": "Student not found"}
+
 
 
 # ------------------------------------
