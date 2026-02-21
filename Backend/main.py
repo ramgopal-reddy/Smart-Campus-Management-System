@@ -63,6 +63,31 @@ class FoodOrderCreate(BaseModel):
     break_time: str
     student_email: str
 
+class BlockCreate(BaseModel):
+    name: str
+
+
+class ClassroomCreate(BaseModel):
+    room_number: str
+    capacity: int
+    block_id: int
+
+
+class CourseCreate(BaseModel):
+    course_code: str
+    course_name: str
+    weekly_hours: int
+
+
+class FacultyCreate(BaseModel):
+    name: str
+    email: str
+
+
+class FacultyCourseAssign(BaseModel):
+    faculty_id: int
+    course_id: int
+    assigned_hours: int
 
 # -------------------------
 # SEND EMAIL FUNCTION
@@ -202,4 +227,146 @@ def get_student(roll_number: str, db: Session = Depends(get_db)):
         "name": student.name,
         "roll": student.roll,
         "email": student.email
+    }
+
+@app.post("/add_block")
+def add_block(data: BlockCreate, db: Session = Depends(get_db)):
+    block = Block(name=data.name)
+    db.add(block)
+    db.commit()
+    return {"message": "Block added successfully"}
+
+# Blocks
+@app.get("/blocks")
+def get_blocks(db: Session = Depends(get_db)):
+    blocks = db.query(Block).all()
+    return [{"id": b.id, "name": b.name} for b in blocks]
+
+@app.post("/add_classroom")
+def add_classroom(data: ClassroomCreate, db: Session = Depends(get_db)):
+    classroom = Classroom(
+        room_number=data.room_number,
+        capacity=data.capacity,
+        block_id=data.block_id
+    )
+    db.add(classroom)
+    db.commit()
+    return {"message": "Classroom added successfully"}
+
+# Classrooms
+@app.get("/classrooms")
+def get_classrooms(db: Session = Depends(get_db)):
+    classrooms = db.query(Classroom).all()
+    return [
+        {
+            "id": c.id,
+            "room_number": c.room_number,
+            "capacity": c.capacity,
+            "block_id": c.block_id
+        }
+        for c in classrooms
+    ]
+
+# Courses
+
+@app.post("/add_course")
+def add_course(data: CourseCreate, db: Session = Depends(get_db)):
+    course = Course(
+        course_code=data.course_code,
+        course_name=data.course_name,
+        weekly_hours=data.weekly_hours
+    )
+    db.add(course)
+    db.commit()
+    return {"message": "Course added successfully"}
+
+
+@app.get("/courses")
+def get_courses(db: Session = Depends(get_db)):
+    courses = db.query(Course).all()
+    return [
+        {
+            "id": c.id,
+            "code": c.course_code,
+            "name": c.course_name,
+            "weekly_hours": c.weekly_hours
+        }
+        for c in courses
+    ]
+
+# Faculty
+@app.post("/add_faculty")
+def add_faculty(data: FacultyCreate, db: Session = Depends(get_db)):
+    faculty = Faculty(name=data.name, email=data.email)
+    db.add(faculty)
+    db.commit()
+    return {"message": "Faculty added successfully"}
+
+
+@app.get("/faculty")
+def get_faculty(db: Session = Depends(get_db)):
+    faculty = db.query(Faculty).all()
+    return [
+        {"id": f.id, "name": f.name, "email": f.email}
+        for f in faculty
+    ]
+
+# Assign Course to faculty
+@app.post("/assign_course")
+def assign_course(data: FacultyCourseAssign, db: Session = Depends(get_db)):
+    assignment = FacultyCourse(
+        faculty_id=data.faculty_id,
+        course_id=data.course_id,
+        assigned_hours=data.assigned_hours
+    )
+    db.add(assignment)
+    db.commit()
+    return {"message": "Course assigned to faculty successfully"}
+
+
+# Classrooms Utilization
+
+@app.get("/classroom_utilization/{classroom_id}")
+def classroom_utilization(classroom_id: int, db: Session = Depends(get_db)):
+
+    classroom = db.query(Classroom).filter(Classroom.id == classroom_id).first()
+    if not classroom:
+        raise HTTPException(status_code=404, detail="Classroom not found")
+
+    student_count = db.query(Student).count()  # Simplified for now
+
+    utilization = (student_count / classroom.capacity) * 100 if classroom.capacity else 0
+
+    return {"utilization_percentage": round(utilization, 2)}
+
+# Block Utilization
+@app.get("/block_utilization/{block_id}")
+def block_utilization(block_id: int, db: Session = Depends(get_db)):
+
+    classrooms = db.query(Classroom).filter(Classroom.block_id == block_id).all()
+
+    total_capacity = sum(c.capacity for c in classrooms)
+
+    student_count = db.query(Student).count()
+
+    utilization = (student_count / total_capacity) * 100 if total_capacity else 0
+
+    return {"utilization_percentage": round(utilization, 2)}
+
+# Faculty workload
+
+@app.get("/faculty_workload/{faculty_id}")
+def faculty_workload(faculty_id: int, db: Session = Depends(get_db)):
+
+    assignments = db.query(FacultyCourse).filter(FacultyCourse.faculty_id == faculty_id).all()
+
+    total_hours = sum(a.assigned_hours for a in assignments)
+
+    STANDARD_HOURS = 20
+
+    utilization = (total_hours / STANDARD_HOURS) * 100
+
+    return {
+        "total_assigned_hours": total_hours,
+        "utilization_percentage": round(utilization, 2)
     }
