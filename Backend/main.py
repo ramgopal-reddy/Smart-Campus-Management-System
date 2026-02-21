@@ -7,7 +7,17 @@ from pydantic import BaseModel
 import os
 
 from database import SessionLocal, engine
-from models import Base, Student, Attendance, FoodOrder
+from models import (
+    Base,
+    Student,
+    Attendance,
+    FoodOrder,
+    Block,
+    Classroom,
+    Course,
+    Faculty,
+    FacultyCourse
+)
 
 # Create tables
 Base.metadata.create_all(bind=engine)
