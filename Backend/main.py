@@ -239,6 +239,14 @@ def get_student(roll_number: str, db: Session = Depends(get_db)):
         "email": student.email
     }
 
+@app.get("/students")
+def get_all_students(db: Session = Depends(get_db)):
+    students = db.query(Student).all()
+    return [{"roll": s.roll, "name": s.name, "email": s.email} for s in students]
+
+
+
+# Add block
 @app.post("/add_block")
 def add_block(data: BlockCreate, db: Session = Depends(get_db)):
     block = Block(name=data.name)
