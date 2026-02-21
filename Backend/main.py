@@ -341,7 +341,17 @@ def mark_makeup_attendance(data: MarkRemedialAttendance, db: Session = Depends(g
 
 @app.get("/makeup_attendance_history")
 def makeup_attendance_history(db: Session = Depends(get_db)):
-    return db.query(MakeupAttendance).all()
+    records = db.query(MakeupAttendance).all()
+
+    return [
+        {
+            "id": r.id,
+            "makeup_class_id": r.makeup_class_id,
+            "roll": r.roll,
+            "status": r.status
+        }
+        for r in records
+    ]
 
 # ==========================================================
 # ROOT
