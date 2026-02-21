@@ -1,33 +1,33 @@
-from fastapi import FastAPI, Depends
+from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from sendgrid import SendGridAPIClient
 from sendgrid.helpers.mail import Mail
+from pydantic import BaseModel
 import os
 
 from database import SessionLocal, engine
 from models import Base, Student, Attendance, FoodOrder
 
-# Create tables automatically
+# Create tables
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="Smart LPU Campus Management System")
 
-# Add CORS middleware BEFORE defining your routes
+
+# -------------------------
+# CORS CONFIG (REMOVE "*" IN PRODUCTION)
+# -------------------------
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "http://127.0.0.1:8000",      # Django development server
-        "http://localhost:8000",         # Django development server (alternative)
-        "https://127.0.0.1:8000",     # HTTPS Django server
-        "https://localhost:8000",        # HTTPS Django server (alternative)
-        "https://your-render-domain.onrender.com",  # Your production frontend
-        "*"  # For development only - remove in production
+        "http://127.0.0.1:8000",
+        "http://localhost:8000",
+        "https://your-frontend-domain.onrender.com"
     ],
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_methods=["*"],
     allow_headers=["*"],
-    expose_headers=["*"]
 )
 
 
@@ -43,19 +43,42 @@ def get_db():
 
 
 # -------------------------
+# PYDANTIC SCHEMAS
+# -------------------------
+class StudentCreate(BaseModel):
+    student_name: str
+    roll_number: str
+    student_email: str
+
+
+class AttendanceCreate(BaseModel):
+    roll_number: str
+    status: str
+    student_email: str
+
+
+class FoodOrderCreate(BaseModel):
+    student_name: str
+    food_item: str
+    break_time: str
+    student_email: str
+
+
+# -------------------------
 # SEND EMAIL FUNCTION
 # -------------------------
-def send_email(to_email, subject, message_text):
-    message = Mail(
-        from_email=os.getenv("DEVELOPER_EMAIL"),
-        to_emails=to_email,
-        subject=subject,
-        plain_text_content=message_text
-    )
-
+def send_email(to_email: str, subject: str, message_text: str):
     try:
+        message = Mail(
+            from_email=os.getenv("DEVELOPER_EMAIL"),
+            to_emails=to_email,
+            subject=subject,
+            plain_text_content=message_text
+        )
+
         sg = SendGridAPIClient(os.getenv("SENDGRID_API_KEY"))
         sg.send(message)
+
     except Exception as e:
         print("Email error:", e)
 
@@ -64,12 +87,18 @@ def send_email(to_email, subject, message_text):
 # ADD STUDENT
 # -------------------------
 @app.post("/add_student")
-def add_student(student_name: str, roll_number: str, student_email: str, db: Session = Depends(get_db)):
+def add_student(data: StudentCreate, db: Session = Depends(get_db)):
+
+    existing_student = db.query(Student).filter(Student.roll == data.roll_number).first()
+    if existing_student:
+        raise HTTPException(status_code=400, detail="Student with this roll number already exists")
+
     student = Student(
-        name=student_name,
-        roll=roll_number,
-        email=student_email
+        name=data.student_name,
+        roll=data.roll_number,
+        email=data.student_email
     )
+
     db.add(student)
     db.commit()
     db.refresh(student)
@@ -81,22 +110,28 @@ def add_student(student_name: str, roll_number: str, student_email: str, db: Ses
 # MARK ATTENDANCE
 # -------------------------
 @app.post("/mark_attendance")
-def mark_attendance(roll_number: str, status: str, student_email: str, db: Session = Depends(get_db)):
+def mark_attendance(data: AttendanceCreate, db: Session = Depends(get_db)):
+
+    student = db.query(Student).filter(Student.roll == data.roll_number).first()
+    if not student:
+        raise HTTPException(status_code=404, detail="Student not found")
+
     record = Attendance(
-        roll=roll_number,
-        status=status
+        roll=data.roll_number,
+        status=data.status
     )
 
     db.add(record)
     db.commit()
 
     subject = "Attendance Alert"
-    if status == "Absent":
+
+    if data.status.lower() == "absent":
         message = "You were marked ABSENT today. Please contact faculty."
     else:
         message = "You were marked PRESENT today. Happy Learning."
 
-    send_email(student_email, subject, message)
+    send_email(data.student_email, subject, message)
 
     return {"message": "Attendance marked successfully"}
 
@@ -107,27 +142,32 @@ def mark_attendance(roll_number: str, status: str, student_email: str, db: Sessi
 @app.get("/attendance_history")
 def attendance_history(db: Session = Depends(get_db)):
     records = db.query(Attendance).all()
-    return records
+
+    return [
+        {"roll": r.roll, "status": r.status}
+        for r in records
+    ]
 
 
 # -------------------------
 # ORDER FOOD
 # -------------------------
 @app.post("/order_food")
-def order_food(student_name: str, food_item: str, break_time: str, student_email: str, db: Session = Depends(get_db)):
+def order_food(data: FoodOrderCreate, db: Session = Depends(get_db)):
+
     order = FoodOrder(
-        student=student_name,
-        food=food_item,
-        time=break_time
+        student=data.student_name,
+        food=data.food_item,
+        time=data.break_time
     )
 
     db.add(order)
     db.commit()
 
     send_email(
-        student_email,
+        data.student_email,
         "Food Order Confirmation",
-        f"Your order for {food_item} at {break_time} is confirmed."
+        f"Your order for {data.food_item} at {data.break_time} is confirmed."
     )
 
     return {"message": "Food order placed successfully"}
@@ -138,8 +178,13 @@ def order_food(student_name: str, food_item: str, break_time: str, student_email
 # -------------------------
 @app.get("/food_order_history")
 def food_order_history(db: Session = Depends(get_db)):
+
     orders = db.query(FoodOrder).all()
-    return orders
+
+    return [
+        {"student": o.student, "food": o.food, "time": o.time}
+        for o in orders
+    ]
 
 
 # -------------------------
@@ -147,9 +192,14 @@ def food_order_history(db: Session = Depends(get_db)):
 # -------------------------
 @app.get("/student/{roll_number}")
 def get_student(roll_number: str, db: Session = Depends(get_db)):
+
     student = db.query(Student).filter(Student.roll == roll_number).first()
 
-    if student:
-        return student
+    if not student:
+        raise HTTPException(status_code=404, detail="Student not found")
 
-    return {"error": "Student not found"}
+    return {
+        "name": student.name,
+        "roll": student.roll,
+        "email": student.email
+    }
