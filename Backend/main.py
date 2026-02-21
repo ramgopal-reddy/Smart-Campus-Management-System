@@ -353,6 +353,37 @@ def makeup_attendance_history(db: Session = Depends(get_db)):
         for r in records
     ]
 
+@app.get("/makeup_classes")
+def get_makeup_classes(db: Session = Depends(get_db)):
+    makeup_classes = db.query(MakeupClass).all()
+    
+    result = []
+    for makeup in makeup_classes:
+        # Get faculty info
+        faculty = db.query(Faculty).filter(Faculty.id == makeup.faculty_id).first()
+        faculty_name = faculty.name if faculty else "Unknown"
+        
+        # Get course info
+        course = db.query(Course).filter(Course.id == makeup.course_id).first()
+        course_name = course.course_name if course else "Unknown"
+        
+        # Get attendance count
+        attendance_count = db.query(MakeupAttendance).filter(
+            MakeupAttendance.makeup_class_id == makeup.id
+        ).count()
+        
+        result.append({
+            "id": makeup.id,
+            "faculty_name": faculty_name,
+            "course_name": course_name,
+            "scheduled_time": makeup.scheduled_time,
+            "remedial_code": makeup.remedial_code,
+            "created_at": makeup.created_at,
+            "attendance_count": attendance_count
+        })
+    
+    return result
+
 # ==========================================================
 # ROOT
 # ==========================================================
