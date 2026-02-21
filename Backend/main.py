@@ -1,15 +1,32 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends
+from sqlalchemy.orm import Session
 from sendgrid import SendGridAPIClient
 from sendgrid.helpers.mail import Mail
 import os
 
-from database import students, attendance_records, food_orders
+from database import SessionLocal, engine
+from models import Base, Student, Attendance, FoodOrder
+
+# Create tables automatically
+Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="Smart LPU Campus Management System")
 
-# ------------------------------------------------
-# SENDGRID EMAIL FUNCTION (PASSWORD-LESS)
-# ------------------------------------------------
+
+# -------------------------
+# DATABASE DEPENDENCY
+# -------------------------
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+
+# -------------------------
+# SEND EMAIL FUNCTION
+# -------------------------
 def send_email(to_email, subject, message_text):
     message = Mail(
         from_email=os.getenv("DEVELOPER_EMAIL"),
@@ -20,156 +37,101 @@ def send_email(to_email, subject, message_text):
 
     try:
         sg = SendGridAPIClient(os.getenv("SENDGRID_API_KEY"))
-        response = sg.send(message)
-        print("Email sent:", response.status_code)
+        sg.send(message)
     except Exception as e:
         print("Email error:", e)
 
 
-# ------------------------------------------------
-# STUDENT MODULE
-# ------------------------------------------------
+# -------------------------
+# ADD STUDENT
+# -------------------------
 @app.post("/add_student")
-def add_student(student_name: str, roll_number: str, student_email: str):
-    student = {
-        "name": student_name,
-        "roll": roll_number,
-        "email": student_email
-    }
-    students.append(student)
+def add_student(student_name: str, roll_number: str, student_email: str, db: Session = Depends(get_db)):
+    student = Student(
+        name=student_name,
+        roll=roll_number,
+        email=student_email
+    )
+    db.add(student)
+    db.commit()
+    db.refresh(student)
+
     return {"message": "Student added successfully"}
 
 
-# ------------------------------------------------
-# ATTENDANCE MODULE
-# ------------------------------------------------
+# -------------------------
+# MARK ATTENDANCE
+# -------------------------
 @app.post("/mark_attendance")
-def mark_attendance(roll_number: str, status: str, student_email: str):
-    record = {
-        "roll": roll_number,
-        "status": status
-    }
-    attendance_records.append(record)
+def mark_attendance(roll_number: str, status: str, student_email: str, db: Session = Depends(get_db)):
+    record = Attendance(
+        roll=roll_number,
+        status=status
+    )
 
+    db.add(record)
+    db.commit()
+
+    subject = "Attendance Alert"
     if status == "Absent":
-        send_email(
-            to_email=student_email,
-            subject="Attendance Alert",
-            message_text="You were marked ABSENT today. Please contact faculty."
-        )
-        
-    if status == "Present":
-        send_email(
-            to_email=student_email,
-            subject="Attendance Alert",
-            message_text="You were marked PRESENT today. Happy Learning."
-        )
+        message = "You were marked ABSENT today. Please contact faculty."
+    else:
+        message = "You were marked PRESENT today. Happy Learning."
+
+    send_email(student_email, subject, message)
 
     return {"message": "Attendance marked successfully"}
 
 
+# -------------------------
+# ATTENDANCE HISTORY
+# -------------------------
 @app.get("/attendance_history")
-def attendance_history():
-    return attendance_records
+def attendance_history(db: Session = Depends(get_db)):
+    records = db.query(Attendance).all()
+    return records
 
 
-# ------------------------------------------------
-# FOOD PRE-ORDER MODULE
-# ------------------------------------------------
+# -------------------------
+# ORDER FOOD
+# -------------------------
 @app.post("/order_food")
-def order_food(student_name: str, food_item: str, break_time: str, student_email: str):
-    order = {
-        "student": student_name,
-        "food": food_item,
-        "time": break_time
-    }
-    food_orders.append(order)
+def order_food(student_name: str, food_item: str, break_time: str, student_email: str, db: Session = Depends(get_db)):
+    order = FoodOrder(
+        student=student_name,
+        food=food_item,
+        time=break_time
+    )
+
+    db.add(order)
+    db.commit()
 
     send_email(
-        to_email=student_email,
-        subject="Food Order Confirmation",
-        message_text=f"Your order for {food_item} at {break_time} is confirmed."
+        student_email,
+        "Food Order Confirmation",
+        f"Your order for {food_item} at {break_time} is confirmed."
     )
 
     return {"message": "Food order placed successfully"}
 
 
+# -------------------------
+# FOOD ORDER HISTORY
+# -------------------------
 @app.get("/food_order_history")
-def food_order_history():
-    return food_orders
-# ------------------------------------
-# STUDENT MODULE
-# ------------------------------------
-@app.post("/add_student")
-def add_student(student_name: str, roll_number: str, student_email: str):
-    student = {
-        "name": student_name,
-        "roll": roll_number,
-        "email": student_email
-    }
-    students.append(student)
-    return {"message": "Student added successfully"}
+def food_order_history(db: Session = Depends(get_db)):
+    orders = db.query(FoodOrder).all()
+    return orders
 
 
-# ------------------------------------
-# ATTENDANCE MODULE
-# ------------------------------------
-@app.post("/mark_attendance")
-def mark_attendance(roll_number: str, status: str, student_email: str):
-    record = {
-        "roll": roll_number,
-        "status": status
-    }
-    attendance_records.append(record)
-
-    if status == "Absent":
-        send_email(
-            to_email=student_email,
-            message="You were marked ABSENT today. Please contact faculty."
-        )
-
-    return {"message": "Attendance marked successfully"}
-
-
-@app.get("/attendance_history")
-def attendance_history():
-    return attendance_records
-
-# -----------------------------
-# GET STUDENT DETAILS
-# -----------------------------
+# -------------------------
+# GET STUDENT BY ROLL
+# -------------------------
 @app.get("/student/{roll_number}")
-def get_student(roll_number: str):
+def get_student(roll_number: str, db: Session = Depends(get_db)):
+    student = db.query(Student).filter(Student.roll == roll_number).first()
 
-    for student in students:
-
-        if student["roll"] == roll_number:
-            return student
+    if student:
+        return student
 
     return {"error": "Student not found"}
-
-
-
-# ------------------------------------
-# FOOD PRE-ORDER MODULE
-# ------------------------------------
-@app.post("/order_food")
-def order_food(student_name: str, food_item: str, break_time: str, student_email: str):
-    order = {
-        "student": student_name,
-        "food": food_item,
-        "time": break_time
-    }
-    food_orders.append(order)
-
-    send_email(
-        to_email=student_email,
-        message=f"Your food order for {food_item} at {break_time} is confirmed."
-    )
-
-    return {"message": "Food order placed successfully"}
-
-
-@app.get("/food_order_history")
-def food_order_history():
-    return food_orders
