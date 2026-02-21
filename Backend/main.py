@@ -1,4 +1,5 @@
 from fastapi import FastAPI, Depends
+from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from sendgrid import SendGridAPIClient
 from sendgrid.helpers.mail import Mail
@@ -11,6 +12,23 @@ from models import Base, Student, Attendance, FoodOrder
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="Smart LPU Campus Management System")
+
+# Add CORS middleware BEFORE defining your routes
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://127.0.0.1:8000",      # Django development server
+        "http://localhost:8000",         # Django development server (alternative)
+        "https://127.0.0.1:8000",     # HTTPS Django server
+        "https://localhost:8000",        # HTTPS Django server (alternative)
+        "https://your-render-domain.onrender.com",  # Your production frontend
+        "*"  # For development only - remove in production
+    ],
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["*"],
+    expose_headers=["*"]
+)
 
 
 # -------------------------
