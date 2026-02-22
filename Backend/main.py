@@ -1,12 +1,15 @@
 from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from sendgrid import SendGridAPIClient
 from sendgrid.helpers.mail import Mail
+from passlib.context import CryptContext
+from jose import JWTError, jwt
 from pydantic import BaseModel
 import os
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from database import SessionLocal, engine
 from models import (
@@ -20,7 +23,8 @@ from models import (
     Faculty,
     FacultyCourse,
     MakeupClass,
-    MakeupAttendance
+    MakeupAttendance,
+    User  # ⚠️ Ensure User model exists in models.py
 )
 
 # Create tables
@@ -28,26 +32,138 @@ Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="Smart LPU Campus Management System")
 
-# -------------------------
-# CORS CONFIG (FIXED)
-# -------------------------
+# ==========================================================
+# JWT CONFIGURATION
+# ==========================================================
+SECRET_KEY = "supersecretkey123"
+ALGORITHM = "HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES = 60
+
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
+
+# ==========================================================
+# CORS
+# ==========================================================
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # safe for now (can restrict later)
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# -------------------------
+# ==========================================================
 # DATABASE DEPENDENCY
-# -------------------------
+# ==========================================================
 def get_db():
     db = SessionLocal()
     try:
         yield db
     finally:
         db.close()
+
+# ==========================================================
+# AUTH HELPERS
+# ==========================================================
+def hash_password(password: str):
+    return pwd_context.hash(password)
+
+def verify_password(plain_password, hashed_password):
+    return pwd_context.verify(plain_password, hashed_password)
+
+def create_access_token(data: dict):
+    to_encode = data.copy()
+    expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    to_encode.update({"exp": expire})
+    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+
+def get_current_user(token: str = Depends(oauth2_scheme),
+                     db: Session = Depends(get_db)):
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        email = payload.get("sub")
+
+        if email is None:
+            raise HTTPException(status_code=401, detail="Invalid token")
+
+        user = db.query(User).filter(User.email == email).first()
+        if not user:
+            raise HTTPException(status_code=401, detail="User not found")
+
+        return user
+
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+# ==========================================================
+# AUTH SCHEMAS
+# ==========================================================
+class UserRegister(BaseModel):
+    name: str
+    email: str
+    password: str
+    role: str = "student"
+
+# ==========================================================
+# AUTH ENDPOINTS
+# ==========================================================
+@app.post("/register")
+def register(user: UserRegister, db: Session = Depends(get_db)):
+    existing = db.query(User).filter(User.email == user.email).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="Email already registered")
+
+    new_user = User(
+        name=user.name,
+        email=user.email,
+        password=hash_password(user.password),
+        role=user.role
+    )
+
+    db.add(new_user)
+    db.commit()
+
+    return {"message": "User registered successfully"}
+
+@app.post("/login")
+def login(form_data: OAuth2PasswordRequestForm = Depends(),
+          db: Session = Depends(get_db)):
+
+    user = db.query(User).filter(User.email == form_data.username).first()
+
+    if not user or not verify_password(form_data.password, user.password):
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+
+    token = create_access_token({
+        "sub": user.email,
+        "role": user.role
+    })
+
+    return {"access_token": token, "token_type": "bearer"}
+
+@app.get("/protected")
+def protected(current_user: User = Depends(get_current_user)):
+    return {
+        "message": f"Welcome {current_user.name}",
+        "role": current_user.role
+    }
+
+# ==========================================================
+# EMAIL FUNCTION
+# ==========================================================
+def send_email(to_email: str, subject: str, message_text: str):
+    try:
+        message = Mail(
+            from_email=os.getenv("DEVELOPER_EMAIL"),
+            to_emails=to_email,
+            subject=subject,
+            plain_text_content=message_text
+        )
+        sg = SendGridAPIClient(os.getenv("SENDGRID_API_KEY"))
+        sg.send(message)
+    except Exception as e:
+        print("Email error:", e)
 
 # ==========================================================
 # PYDANTIC SCHEMAS
@@ -90,7 +206,6 @@ class FacultyCourseAssign(BaseModel):
     course_id: int
     assigned_hours: int
 
-# Make-up schemas
 class MakeupClassCreate(BaseModel):
     faculty_id: int
     course_id: int
@@ -99,22 +214,6 @@ class MakeupClassCreate(BaseModel):
 class MarkRemedialAttendance(BaseModel):
     roll_number: str
     remedial_code: str
-
-# ==========================================================
-# EMAIL FUNCTION
-# ==========================================================
-def send_email(to_email: str, subject: str, message_text: str):
-    try:
-        message = Mail(
-            from_email=os.getenv("DEVELOPER_EMAIL"),
-            to_emails=to_email,
-            subject=subject,
-            plain_text_content=message_text
-        )
-        sg = SendGridAPIClient(os.getenv("SENDGRID_API_KEY"))
-        sg.send(message)
-    except Exception as e:
-        print("Email error:", e)
 
 # ==========================================================
 # STUDENT MANAGEMENT
@@ -130,8 +229,10 @@ def add_student(data: StudentCreate, db: Session = Depends(get_db)):
         roll=data.roll_number,
         email=data.student_email
     )
+
     db.add(student)
     db.commit()
+
     return {"message": "Student added successfully"}
 
 @app.get("/students")
@@ -268,7 +369,7 @@ def assign_course(data: FacultyCourseAssign, db: Session = Depends(get_db)):
     return {"message": "Course assigned successfully"}
 
 # ==========================================================
-# UTILIZATION
+# FACULTY UTILIZATION
 # ==========================================================
 @app.get("/faculty_workload/{faculty_id}")
 def faculty_workload(faculty_id: int, db: Session = Depends(get_db)):
@@ -289,7 +390,8 @@ def faculty_workload(faculty_id: int, db: Session = Depends(get_db)):
 # MAKE-UP CLASS MODULE
 # ==========================================================
 @app.post("/schedule_makeup_class")
-def schedule_makeup_class(data: MakeupClassCreate, db: Session = Depends(get_db)):
+def schedule_makeup_class(data: MakeupClassCreate,
+                          db: Session = Depends(get_db)):
 
     remedial_code = str(uuid.uuid4())[:8].upper()
 
@@ -303,7 +405,6 @@ def schedule_makeup_class(data: MakeupClassCreate, db: Session = Depends(get_db)
 
     db.add(makeup)
     db.commit()
-    db.refresh(makeup)
 
     return {
         "message": "Make-up class scheduled",
@@ -311,7 +412,8 @@ def schedule_makeup_class(data: MakeupClassCreate, db: Session = Depends(get_db)
     }
 
 @app.post("/mark_makeup_attendance")
-def mark_makeup_attendance(data: MarkRemedialAttendance, db: Session = Depends(get_db)):
+def mark_makeup_attendance(data: MarkRemedialAttendance,
+                           db: Session = Depends(get_db)):
 
     makeup = db.query(MakeupClass).filter(
         MakeupClass.remedial_code == data.remedial_code
@@ -353,40 +455,6 @@ def makeup_attendance_history(db: Session = Depends(get_db)):
         for r in records
     ]
 
-@app.get("/makeup_classes")
-def get_makeup_classes(db: Session = Depends(get_db)):
-    makeup_classes = db.query(MakeupClass).all()
-    
-    result = []
-    for makeup in makeup_classes:
-        # Get faculty info
-        faculty = db.query(Faculty).filter(Faculty.id == makeup.faculty_id).first()
-        faculty_name = faculty.name if faculty else "Unknown"
-        
-        # Get course info
-        course = db.query(Course).filter(Course.id == makeup.course_id).first()
-        course_name = course.course_name if course else "Unknown"
-        
-        # Get attendance count
-        attendance_count = db.query(MakeupAttendance).filter(
-            MakeupAttendance.makeup_class_id == makeup.id
-        ).count()
-        
-        result.append({
-            "id": makeup.id,
-            "faculty_name": faculty_name,
-            "course_name": course_name,
-            "scheduled_time": makeup.scheduled_time,
-            "remedial_code": makeup.remedial_code,
-            "created_at": makeup.created_at,
-            "attendance_count": attendance_count
-        })
-    
-    return result
-
-# ==========================================================
-# ROOT
-# ==========================================================
 @app.get("/")
 def root():
     return {"message": "Smart LPU Campus Management System API Running Successfully"}
