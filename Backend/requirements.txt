@@ -5,6 +5,6 @@ psycopg2-binary
 sendgrid
 pydantic
 python-dotenv
-passlib[bcrypt]
+passlib
 python-jose[cryptography]
 python-multipart
